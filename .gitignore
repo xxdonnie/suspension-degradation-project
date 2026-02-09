@@ -1,0 +1,54 @@
+# =====================
+# OS / Editor
+# =====================
+.DS_Store
+Thumbs.db
+.vscode/
+
+# =====================
+# Python
+# =====================
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# =====================
+# Measurement / Data
+# =====================
+raw_data/
+*.csv
+*.xlsx
+*.mat
+*.hdf5
+*.bin
+*.log
+
+# =====================
+# FEM / CAE Outputs
+# =====================
+*.odb
+*.op2
+*.dat
+*.inp
+*.pch
+*.rst
+*.cdb
+*.sim
+*.fem
+*.bdf
+*.res
+*.sta
+
+# =====================
+# Plots / Exports
+# =====================
+*.png
+*.jpg
+*.pdf
+
+# =====================
+# Temporary
+# =====================
+temp/
+scratch/
