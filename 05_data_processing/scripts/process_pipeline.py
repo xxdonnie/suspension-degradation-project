@@ -18,22 +18,11 @@ the Arduino DAQ. Runs in sequence:
    10. Feature extraction           (extract_features)
    11. Save all outputs             (save_outputs)
 
-Usage
------
-    python process_pipeline.py --input path/to/raw_log.csv [--outdir path/to/output]
-
-Dependencies
-------------
-    numpy, pandas, scipy, rainflow, matplotlib
-    Install: pip install numpy pandas scipy rainflow matplotlib
 
 Raw CSV format (from Arduino logger)
 -------------------------------------
     timestamp_ms, accel_x, accel_y, accel_z, strain_raw
     (header row optional — auto-detected)
-
-Author: [your name]
-Date:   [date of first run]
 """
 
 import argparse
@@ -49,9 +38,8 @@ from scipy.signal import detrend, butter, sosfiltfilt, iirnotch, welch
 from scipy.stats import kurtosis as scipy_kurtosis
 import matplotlib.pyplot as plt
 
-# ---------------------------------------------------------------------------
-# Constants — adjust to match your exact hardware setup
-# ---------------------------------------------------------------------------
+
+# Constants — to be adjusted
 
 FS = 200.0          # Sampling rate, Hz
 G_TO_MS2 = 9.81     # Conversion factor
@@ -60,7 +48,7 @@ G_TO_MS2 = 9.81     # Conversion factor
 ACCEL_FULL_SCALE_G = 16.0
 ACCEL_SCALE = (ACCEL_FULL_SCALE_G / 32768.0) * G_TO_MS2   # counts → m/s²
 
-# Strain gauge calibration — update after physical calibration
+# Strain gauge calibration, will update after physical calibration
 # INA125 amplifier gain and gauge factor (GF) combined into one factor.
 # Units: ADC counts → microstrain (με)
 # Placeholder: 1 count = 0.5 με — MUST be measured/calibrated before use.
@@ -106,9 +94,8 @@ BAND_LOW = (0.5, 5.0)
 BAND_MID = (5.0, 25.0)
 BAND_HIGH = (25.0, 80.0)
 
-# ---------------------------------------------------------------------------
+
 # Logging setup
-# ---------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,9 +105,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ===========================================================================
-# STEP 1 — Load and unit conversion
-# ===========================================================================
+# Load and unit conversion
 
 def load_data(csv_path: Path) -> pd.DataFrame:
     """
@@ -165,9 +150,7 @@ def load_data(csv_path: Path) -> pd.DataFrame:
     ]]
 
 
-# ===========================================================================
-# STEP 2 — Timestamp repair
-# ===========================================================================
+# Timestamp repair
 
 def repair_timestamps(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """
@@ -226,9 +209,7 @@ def repair_timestamps(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return df, summary
 
 
-# ===========================================================================
-# STEP 3 — Detrending
-# ===========================================================================
+# Detrending
 
 def detrend_signal(sig: np.ndarray, poly_order: int = 1) -> np.ndarray:
     """
@@ -246,9 +227,7 @@ def detrend_signal(sig: np.ndarray, poly_order: int = 1) -> np.ndarray:
         return sig - trend
 
 
-# ===========================================================================
-# STEP 4 — Low-pass filter
-# ===========================================================================
+#Low-pass filter
 
 def lowpass_filter(sig: np.ndarray, cutoff: float = LP_CUTOFF_HZ) -> np.ndarray:
     """
@@ -260,10 +239,7 @@ def lowpass_filter(sig: np.ndarray, cutoff: float = LP_CUTOFF_HZ) -> np.ndarray:
     sos = butter(LP_ORDER, cutoff, btype="low", fs=FS, output="sos")
     return sosfiltfilt(sos, sig)
 
-
-# ===========================================================================
-# STEP 5 — High-pass filter (optional, for PSD analysis only)
-# ===========================================================================
+# High-pass filter (optional, PSD analysis only)
 
 def highpass_filter(sig: np.ndarray, cutoff: float = HP_CUTOFF_HZ) -> np.ndarray:
     """
@@ -277,9 +253,7 @@ def highpass_filter(sig: np.ndarray, cutoff: float = HP_CUTOFF_HZ) -> np.ndarray
     return sosfiltfilt(sos, sig)
 
 
-# ===========================================================================
-# STEP 6 — 50 Hz notch filter (auto-applied if interference detected)
-# ===========================================================================
+# 50 Hz notch filter auto-applied if interference detected
 
 def apply_notch_if_needed(sig: np.ndarray) -> tuple[np.ndarray, bool]:
     """
@@ -313,9 +287,7 @@ def apply_notch_if_needed(sig: np.ndarray) -> tuple[np.ndarray, bool]:
     return signal.filtfilt(b, a, sig), True
 
 
-# ===========================================================================
-# STEP 7 — Outlier clipping
-# ===========================================================================
+# Outlier clipping
 
 def clip_outliers(sig: np.ndarray) -> tuple[np.ndarray, dict]:
     """
@@ -357,9 +329,8 @@ def clip_outliers(sig: np.ndarray) -> tuple[np.ndarray, dict]:
     return out, {"outliers_clipped": n_spikes, "outlier_fraction": fraction, "suspect": suspect}
 
 
-# ===========================================================================
-# STEP 8 — Rainflow cycle counting
-# ===========================================================================
+# Rainflow cycle counting
+
 
 def count_cycles(
     sig: np.ndarray,
@@ -420,9 +391,8 @@ def count_cycles(
     return cycles_df, rf_matrix, amp_hist
 
 
-# ===========================================================================
-# STEP 9 — Miner's rule damage
-# ===========================================================================
+# Miner's rule damage
+
 
 def compute_damage(
     cycles_df: pd.DataFrame,
@@ -484,9 +454,8 @@ def compute_damage(
     }
 
 
-# ===========================================================================
-# STEP 10 — Feature extraction (windowed)
-# ===========================================================================
+
+# Feature extraction
 
 def extract_features(
     sig: np.ndarray,
@@ -598,9 +567,7 @@ def extract_features(
     return summary, wf
 
 
-# ===========================================================================
-# STEP 11 — Save outputs
-# ===========================================================================
+# save outputs
 
 def save_outputs(
     outdir: Path,
@@ -759,9 +726,7 @@ def _save_plots(
     log.info("  Plots saved to %s", plots_dir)
 
 
-# ===========================================================================
 # Main pipeline
-# ===========================================================================
 
 def run_pipeline(csv_path: Path, outdir: Path) -> None:
     """
@@ -777,14 +742,14 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
     log.info("Processing file: %s", csv_path.name)
     log.info("=" * 60)
 
-    # --- Steps 1 & 2: Load and repair ---
+    # load and repair
     df = load_data(csv_path)
     df, repair_summary = repair_timestamps(df)
 
     duration_s = float(df["time_s"].iloc[-1] - df["time_s"].iloc[0])
     log.info("Record duration: %.1f s", duration_s)
 
-    # --- Process each channel ---
+    # process each channel
     # Primary: strain. Fallback: accel_z.
     strain_suspect = repair_summary.get("gaps_flagged", 0) > 0
 
@@ -794,36 +759,36 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
 
         sig_raw = df[col].values.copy()
 
-        # Step 3: Detrend
+        # detrend
         sig = detrend_signal(sig_raw, poly_order=1)
 
-        # Step 4: Low-pass
+        # low-pass
         sig = lowpass_filter(sig)
 
-        # Step 6: Notch (strain channel only — most prone to mains interference)
+        # notch (strain channel only, most prone to mains interference)
         notch_applied = False
         if channel == "strain_ue":
             sig, notch_applied = apply_notch_if_needed(sig)
 
-        # Step 7: Outlier clipping
+        # outlier clipping
         sig, outlier_summary = clip_outliers(sig)
 
-        # Write cleaned signal back to df
+        # write cleaned signal back to df
         df[f"{col}_clean"] = sig
 
-        # Step 8: Rainflow (strain → stress; accel → proxy)
+        # rainflow (strain to stress, accel to proxy)
         cycles_df, rf_matrix, amp_hist = count_cycles(sig, channel_label=channel)
 
-        # Step 9: Damage
+        # damage
         ch_type = "strain" if channel == "strain_ue" else "accel"
         damage_dict = compute_damage(cycles_df, channel=ch_type, duration_s=duration_s)
 
-        # Step 10: Features
+        # features
         features_summary, features_windows = extract_features(
             sig, channel, cycles_df, damage_dict, duration_s
         )
 
-        # Step 11: Save
+        # save
         # Build a clean df with just time + this channel for saving
         df_out = df[["time_s", col]].copy()
         df_out[col] = sig
@@ -849,9 +814,8 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
     log.info("=" * 60)
 
 
-# ===========================================================================
-# CLI entry point
-# ===========================================================================
+
+# cli entry point
 
 def parse_args():
     p = argparse.ArgumentParser(
