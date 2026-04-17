@@ -19,3 +19,9 @@ Data-driven study of vehicle suspension degradation using real-world driving mea
 
 Raw measurement data and FEM binaries are intentionally excluded. Folder structure and documentation are provided for reproducibility and learning purposes.
 
+## Setup
+
+```bash
+pip install -r requirements.txt
+```
+
