@@ -74,14 +74,11 @@ import numpy as np
 import pandas as pd
 
 
-# ── Constants (must match process_pipeline.py) ──────────────────────────────
-
+# Constants — must match process_pipeline.py
 E_STEEL_MPA = 210e3         # Young's modulus, MPa (low-carbon steel)
 SN_m        = 3.0
 SN_C        = 1.013e12      # MPa^m cycles — BS 7608 Class B
 
-
-# ── Logging ──────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,8 +87,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
-# ── Unit conversion ───────────────────────────────────────────────────────────
 
 def amplitude_to_stress(amplitude_signal: np.ndarray, channel: str) -> np.ndarray:
     """
@@ -110,8 +105,6 @@ def amplitude_to_stress(amplitude_signal: np.ndarray, channel: str) -> np.ndarra
         return amplitude_signal.copy()
 
 
-# ── S-N damage ────────────────────────────────────────────────────────────────
-
 def miner_damage(stress_mpa: np.ndarray, counts: np.ndarray) -> np.ndarray:
     """Miner's partial damage D_i = n_i / N_f(sigma_i) for each cycle group."""
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -119,14 +112,8 @@ def miner_damage(stress_mpa: np.ndarray, counts: np.ndarray) -> np.ndarray:
     return np.where(N_f > 0, counts / N_f, 0.0)
 
 
-# ── Histogram loading ─────────────────────────────────────────────────────────
-
 def load_histogram(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Read amplitude histogram CSV.
-    Returns (amplitude_bin_centres, cycle_counts) as numpy arrays.
-    Bins with zero cycle count are dropped.
-    """
+    """Read amplitude histogram CSV; returns (amplitudes, counts), zeros excluded."""
     df = pd.read_csv(path)
     if not {"amplitude_bin_centre", "cycle_count"}.issubset(df.columns):
         raise ValueError(
@@ -138,10 +125,7 @@ def load_histogram(path: Path) -> tuple[np.ndarray, np.ndarray]:
 
 
 def load_cycles(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Read full rainflow cycles CSV (higher resolution than histogram).
-    Returns (amplitudes, counts).
-    """
+    """Read full rainflow cycles CSV; returns (amplitudes, counts), zeros excluded."""
     df = pd.read_csv(path)
     if not {"amplitude", "count"}.issubset(df.columns):
         raise ValueError(
@@ -151,8 +135,6 @@ def load_cycles(path: Path) -> tuple[np.ndarray, np.ndarray]:
     mask = df["count"] > 0
     return df.loc[mask, "amplitude"].values, df.loc[mask, "count"].values
 
-
-# ── Damage-weighted binning ───────────────────────────────────────────────────
 
 def damage_weighted_bins(
     amplitudes: np.ndarray,
@@ -189,13 +171,9 @@ def damage_weighted_bins(
     rows = []
     for i in range(n_levels):
         lo, hi = boundaries[i], boundaries[i + 1]
-        # Bins whose cumulative value falls in (lo, hi]
-        if split_by == "damage":
-            mask = (cumulative > lo) & (cumulative <= hi)
-        else:
-            mask = (cumulative > lo) & (cumulative <= hi)
+        mask = (cumulative > lo) & (cumulative <= hi)
 
-        # Edge case: last bin picks up anything that fell through
+        # Last level picks up anything that fell through rounding
         if i == n_levels - 1:
             mask = cumulative > lo
 
@@ -236,8 +214,6 @@ def damage_weighted_bins(
     df["cumulative_damage_fraction"] = df["damage_fraction"].cumsum().round(6)
     return df
 
-
-# ── Summary writer ────────────────────────────────────────────────────────────
 
 def write_summary(
     outdir: Path,
@@ -284,8 +260,6 @@ def write_summary(
     log.info("Summary written: %s", path)
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
-
 def build_load_cases(
     histogram_path: Path | None,
     cycles_path:    Path | None,
@@ -293,11 +267,6 @@ def build_load_cases(
     n_levels:       int,
     channel:        str,
 ) -> pd.DataFrame:
-    """
-    Core logic: load data, bin into load levels, write outputs.
-    Returns the load cases DataFrame.
-    """
-    # ── Load input data ───────────────────────────────────────────────────────
     if cycles_path is not None:
         log.info("Loading full rainflow cycles from %s", cycles_path)
         amplitudes, counts = load_cycles(cycles_path)
@@ -313,10 +282,8 @@ def build_load_cases(
 
     log.info("  %d non-zero amplitude bins, %.0f total cycles", len(amplitudes), counts.sum())
 
-    # ── Unit conversion ───────────────────────────────────────────────────────
     stress_mpa = amplitude_to_stress(amplitudes, channel)
 
-    # ── Bin into load levels ──────────────────────────────────────────────────
     log.info("Building %d damage-weighted load levels...", n_levels)
     lc_df = damage_weighted_bins(amplitudes, counts, stress_mpa, n_levels)
 
@@ -326,7 +293,6 @@ def build_load_cases(
 
     log.info("  %d load levels generated", len(lc_df))
 
-    # ── Write outputs ─────────────────────────────────────────────────────────
     outdir.mkdir(parents=True, exist_ok=True)
 
     csv_path = outdir / f"{stem}_fem_load_cases.csv"
@@ -336,7 +302,6 @@ def build_load_cases(
     write_summary(outdir, stem, lc_df, channel, source_file,
                   n_levels, amplitudes, counts, stress_mpa)
 
-    # ── Log table to console ──────────────────────────────────────────────────
     log.info("\nLoad case table:")
     header = (f"  {'LC':>3}  {'Amp(signal)':>12}  {'Stress MPa':>10}  "
               f"{'N cycles':>9}  {'Dmg %':>7}  {'CumDmg %':>9}")
@@ -354,8 +319,6 @@ def build_load_cases(
 
     return lc_df
 
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args():
     p = argparse.ArgumentParser(

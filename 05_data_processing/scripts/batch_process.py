@@ -40,8 +40,6 @@ from pathlib import Path
 import pandas as pd
 
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -49,8 +47,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
-# ── Import pipeline ───────────────────────────────────────────────────────────
 
 # process_pipeline.py lives in the same scripts/ directory.
 sys.path.insert(0, str(Path(__file__).parent))
@@ -62,18 +58,12 @@ except ImportError as e:
     sys.exit(1)
 
 
-# ── Batch runner ──────────────────────────────────────────────────────────────
-
 def collect_feature_summaries(outdir: Path) -> pd.DataFrame:
-    """
-    Walk outdir looking for *_features_summary.csv files produced by the pipeline.
-    Concatenate them into a single DataFrame.
-    """
+    """Collect all *_features_summary.csv files under outdir into one DataFrame."""
     summaries = []
     for summary_path in sorted(outdir.rglob("*_features_summary.csv")):
         try:
             df = pd.read_csv(summary_path)
-            # Tag with stem (file name) and session (parent dir name)
             stem    = summary_path.stem.replace("_features_summary", "")
             channel = summary_path.parent.name   # strain_ue or accel_z
             df.insert(0, "session", stem)
@@ -120,9 +110,7 @@ def run_batch(
         stem        = csv_path.stem
         file_outdir = outdir / stem
 
-        # ── Skip check ────────────────────────────────────────────────────────
         if skip_existing:
-            # Check if at least one channel output already exists
             existing = list(file_outdir.rglob("*_features_summary.csv"))
             if existing:
                 log.info("  SKIP  %s  (outputs exist, use --skip-existing=false to rerun)",
@@ -134,7 +122,6 @@ def run_batch(
             log.info("  DRY   %s  → %s", csv_path.name, file_outdir)
             continue
 
-        # ── Run pipeline ──────────────────────────────────────────────────────
         log.info("  RUN   %s", csv_path.name)
         try:
             run_pipeline(csv_path, file_outdir)
@@ -148,14 +135,8 @@ def run_batch(
     return summary
 
 
-# ── Master table builder ──────────────────────────────────────────────────────
-
 def build_master_table(outdir: Path) -> Path | None:
-    """
-    Collect all feature summaries produced under outdir and write
-    all_sessions_features.csv. Returns the path to the written file,
-    or None if no summaries were found.
-    """
+    """Write all_sessions_features.csv; returns the path or None if no summaries found."""
     master = collect_feature_summaries(outdir)
     if master.empty:
         log.warning("No feature summary files found under %s — master table not written", outdir)
@@ -173,7 +154,6 @@ def write_batch_summary(
     input_dir: Path,
     master_path: Path | None,
 ) -> None:
-    """Write a plain-text batch run summary."""
     ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     path = outdir / "batch_summary.txt"
 
@@ -194,8 +174,6 @@ def write_batch_summary(
 
     log.info("Batch summary written: %s", path)
 
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args():
     p = argparse.ArgumentParser(

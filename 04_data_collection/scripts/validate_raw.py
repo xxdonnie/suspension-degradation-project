@@ -1,39 +1,15 @@
 """
-validate_raw.py
-================
-Suspension Degradation Project
---------------------------------
-Pre-flight validator for raw Arduino DAQ CSV files.
-Run this before feeding a file to process_pipeline.py to catch
-formatting problems, sensor issues, and data quality failures early.
+validate_raw.py — pre-flight validator for raw Arduino DAQ CSV files.
 
-Checks performed
------------------
-  1. Column structure          — expected 5 columns, correct names
-  2. Minimum record length     — at least MIN_RECORD_S seconds of data
-  3. Timestamp monotonicity    — no backwards jumps
-  4. Duplicate timestamps      — identical ms values
-  5. Sampling rate estimate    — median dt vs expected 1000/FS ms
-  6. Gap detection             — intervals > 2× expected dt
-  7. ADC saturation            — values at or near hardware rail
-  8. Per-channel statistics    — mean, std, min, max for quick sanity
+Checks columns, record length, timestamp integrity, sampling rate,
+data gaps, and ADC saturation. Run before process_pipeline.py.
 
-Usage
-------
-  # Validate a single file
-  python validate_raw.py path/to/log.csv
+Usage:
+  python validate_raw.py path/to/log.csv          # single file
+  python validate_raw.py path/to/raw_data/        # all CSVs in dir
+  python validate_raw.py path/to/log.csv --json   # JSON output
 
-  # Validate all CSVs in a directory
-  python validate_raw.py path/to/raw_data/
-
-  # JSON output (for scripting)
-  python validate_raw.py path/to/log.csv --json
-
-Exit codes
------------
-  0  Clean — no issues detected
-  1  Warnings — file is usable but should be reviewed
-  2  Errors   — file should not be processed until issues are resolved
+Exit codes: 0 = clean, 1 = warnings, 2 = errors.
 """
 
 import argparse
@@ -45,8 +21,7 @@ import numpy as np
 import pandas as pd
 
 
-# ── Constants (must match process_pipeline.py) ──────────────────────────────
-
+# Constants — must match process_pipeline.py
 FS_EXPECTED       = 200.0          # Hz
 MIN_RECORD_S      = 10.0           # seconds — shorter records are flagged as errors
 WARN_RECORD_S     = 30.0           # seconds — shorter records get a warning
@@ -66,28 +41,18 @@ STRAIN_SAT_MARGIN = 8              # flag if within 8 counts of either rail
 EXPECTED_COLS = ["timestamp_ms", "accel_x", "accel_y", "accel_z", "strain_raw"]
 
 
-# ── Report helpers ────────────────────────────────────────────────────────────
-
 PASS    = "PASS"
 WARN    = "WARN"
 ERROR   = "ERROR"
-
-def _severity(items: list[dict]) -> str:
-    """Return the worst severity across a list of check result dicts."""
-    levels = {PASS: 0, WARN: 1, ERROR: 2}
-    return max(items, key=lambda x: levels[x["status"]])["status"]
-
 
 def _check(status: str, label: str, message: str) -> dict:
     return {"status": status, "check": label, "message": message}
 
 
-# ── Individual checks ─────────────────────────────────────────────────────────
-
 def check_columns(df: pd.DataFrame) -> dict:
     cols = list(df.columns)
     if cols == EXPECTED_COLS:
-        return _check(PASS, "columns", f"All 5 expected columns present")
+        return _check(PASS, "columns", "columns OK")
     missing = [c for c in EXPECTED_COLS if c not in cols]
     extra   = [c for c in cols if c not in EXPECTED_COLS]
     msg = []
@@ -178,7 +143,7 @@ def check_saturation(df: pd.DataFrame) -> list[dict]:
         frac   = n_sat / len(vals)
         label  = f"saturation_{col}"
         if n_sat == 0:
-            results.append(_check(PASS, label, f"No saturation detected"))
+            results.append(_check(PASS, label, "no saturation"))
         else:
             status = ERROR if frac > 0.001 else WARN
             results.append(_check(status, label,
@@ -192,7 +157,7 @@ def check_saturation(df: pd.DataFrame) -> list[dict]:
         frac  = n_sat / len(vals)
         label = "saturation_strain_raw"
         if n_sat == 0:
-            results.append(_check(PASS, label, "No saturation detected"))
+            results.append(_check(PASS, label, "no saturation"))
         else:
             status = ERROR if frac > 0.001 else WARN
             results.append(_check(status, label,
@@ -203,7 +168,7 @@ def check_saturation(df: pd.DataFrame) -> list[dict]:
 
 
 def channel_stats(df: pd.DataFrame) -> dict:
-    """Return basic per-channel statistics (not a pass/fail check)."""
+    """Return basic per-channel statistics."""
     stats = {}
     for col in EXPECTED_COLS[1:]:   # skip timestamp_ms
         if col not in df.columns:
@@ -218,15 +183,7 @@ def channel_stats(df: pd.DataFrame) -> dict:
     return stats
 
 
-# ── Top-level validator ───────────────────────────────────────────────────────
-
 def validate_file(csv_path: Path) -> dict:
-    """
-    Run all checks on a single CSV file.
-
-    Returns a dict with keys:
-      file, status, duration_s, n_rows, checks, stats
-    """
     result = {
         "file":   str(csv_path),
         "status": ERROR,
@@ -234,7 +191,6 @@ def validate_file(csv_path: Path) -> dict:
         "stats":  {},
     }
 
-    # ── Load ──────────────────────────────────────────────────────────────────
     try:
         raw = pd.read_csv(csv_path, header=None, nrows=1)
         first_cell = str(raw.iloc[0, 0]).strip().lower()
@@ -249,7 +205,6 @@ def validate_file(csv_path: Path) -> dict:
         result["checks"].append(_check(ERROR, "load", f"Failed to read file: {exc}"))
         return result
 
-    # ── Run checks ────────────────────────────────────────────────────────────
     checks: list[dict] = []
 
     col_check = check_columns(df)
@@ -266,7 +221,6 @@ def validate_file(csv_path: Path) -> dict:
     checks.append(check_gaps(df))
     checks.extend(check_saturation(df))
 
-    # ── Aggregate ─────────────────────────────────────────────────────────────
     levels = {PASS: 0, WARN: 1, ERROR: 2}
     worst  = max(checks, key=lambda x: levels[x["status"]])["status"]
 
@@ -283,10 +237,7 @@ def validate_file(csv_path: Path) -> dict:
     return result
 
 
-# ── Rendering ─────────────────────────────────────────────────────────────────
-
 _ICONS = {PASS: "✓", WARN: "△", ERROR: "✗"}
-_WIDTHS = {PASS: 0, WARN: 1, ERROR: 2}
 
 
 def _print_result(result: dict) -> None:
@@ -311,8 +262,6 @@ def _print_result(result: dict) -> None:
                   f"max={s['max']:>10.2f}")
     print()
 
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args():
     p = argparse.ArgumentParser(

@@ -42,8 +42,6 @@ import matplotlib.pyplot as plt
 _trapezoid = getattr(np, "trapezoid", np.trapz)
 
 
-# Constants — to be adjusted
-
 FS = 200.0          # Sampling rate, Hz
 G_TO_MS2 = 9.81     # Conversion factor
 
@@ -98,8 +96,6 @@ BAND_MID = (5.0, 25.0)
 BAND_HIGH = (25.0, 80.0)
 
 
-# Logging setup
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -107,8 +103,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
-# Load and unit conversion
 
 def load_data(csv_path: Path) -> pd.DataFrame:
     """
@@ -152,8 +146,6 @@ def load_data(csv_path: Path) -> pd.DataFrame:
         "strain_ue",
     ]]
 
-
-# Timestamp repair
 
 def repair_timestamps(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """
@@ -212,8 +204,6 @@ def repair_timestamps(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return df, summary
 
 
-# Detrending
-
 def detrend_signal(sig: np.ndarray, poly_order: int = 1) -> np.ndarray:
     """
     Remove DC offset and slow drift.
@@ -230,8 +220,6 @@ def detrend_signal(sig: np.ndarray, poly_order: int = 1) -> np.ndarray:
         return sig - trend
 
 
-#Low-pass filter
-
 def lowpass_filter(sig: np.ndarray, cutoff: float = LP_CUTOFF_HZ) -> np.ndarray:
     """
     4th-order zero-phase Butterworth low-pass filter.
@@ -241,8 +229,6 @@ def lowpass_filter(sig: np.ndarray, cutoff: float = LP_CUTOFF_HZ) -> np.ndarray:
     """
     sos = butter(LP_ORDER, cutoff, btype="low", fs=FS, output="sos")
     return sosfiltfilt(sos, sig)
-
-# High-pass filter (optional, PSD analysis only)
 
 def highpass_filter(sig: np.ndarray, cutoff: float = HP_CUTOFF_HZ) -> np.ndarray:
     """
@@ -293,8 +279,6 @@ def apply_notch_if_needed(sig: np.ndarray) -> tuple[np.ndarray, bool]:
     return signal.filtfilt(b, a, sig), True
 
 
-# Outlier clipping
-
 def clip_outliers(sig: np.ndarray) -> tuple[np.ndarray, dict]:
     """
     Replace single-sample spikes with linear interpolation.
@@ -333,9 +317,6 @@ def clip_outliers(sig: np.ndarray) -> tuple[np.ndarray, dict]:
         )
 
     return out, {"outliers_clipped": n_spikes, "outlier_fraction": fraction, "suspect": suspect}
-
-
-# Rainflow cycle counting
 
 
 def count_cycles(
@@ -395,9 +376,6 @@ def count_cycles(
         cycles_df["range"].mean(),
     )
     return cycles_df, rf_matrix, amp_hist
-
-
-# Miner's rule damage
 
 
 def compute_damage(
@@ -461,15 +439,13 @@ def compute_damage(
 
 
 
-# PSD band-power helper (module-level so it is not redefined on every window)
+# PSD band-power helper
 
 def _band_power(freqs: np.ndarray, psd: np.ndarray, f_lo: float, f_hi: float) -> float:
     """Integrate PSD between f_lo and f_hi using the trapezoidal rule."""
     mask = (freqs >= f_lo) & (freqs < f_hi)
     return float(_trapezoid(psd[mask], freqs[mask])) if np.any(mask) else 0.0
 
-
-# Feature extraction
 
 def extract_features(
     sig: np.ndarray,
@@ -575,8 +551,6 @@ def extract_features(
     return summary, wf
 
 
-# save outputs
-
 def save_outputs(
     outdir: Path,
     stem: str,
@@ -660,7 +634,7 @@ def _save_plots(
     amp_hist: np.ndarray,
     features_windows: pd.DataFrame,
 ) -> None:
-    """Generate and save diagnostic plots. Not committed to the repo."""
+    """Generate and save diagnostic plots."""
     plots_dir = outdir / "plots"
     plots_dir.mkdir(exist_ok=True)
 
@@ -734,8 +708,6 @@ def _save_plots(
     log.info("  Plots saved to %s", plots_dir)
 
 
-# Main pipeline
-
 def run_pipeline(csv_path: Path, outdir: Path) -> None:
     """
     Execute the full processing pipeline for one raw CSV file.
@@ -781,7 +753,6 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
         # outlier clipping
         sig, outlier_summary = clip_outliers(sig)
 
-        # write cleaned signal back to df
         df[f"{col}_clean"] = sig
 
         # rainflow (strain to stress, accel to proxy)
@@ -797,7 +768,6 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
         )
 
         # save
-        # Build a clean df with just time + this channel for saving
         df_out = df[["time_s", col]].copy()
         df_out[col] = sig
 
@@ -821,9 +791,6 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
     log.info("Pipeline complete. Outputs in: %s", outdir)
     log.info("=" * 60)
 
-
-
-# cli entry point
 
 def parse_args():
     p = argparse.ArgumentParser(
