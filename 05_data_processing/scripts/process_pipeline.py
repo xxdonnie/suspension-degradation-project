@@ -38,6 +38,9 @@ from scipy.signal import detrend, butter, sosfiltfilt, iirnotch, welch
 from scipy.stats import kurtosis as scipy_kurtosis
 import matplotlib.pyplot as plt
 
+# NumPy 2.0 renamed np.trapz → np.trapezoid; support both versions.
+_trapezoid = getattr(np, "trapezoid", np.trapz)
+
 
 # Constants — to be adjusted
 
@@ -248,6 +251,9 @@ def highpass_filter(sig: np.ndarray, cutoff: float = HP_CUTOFF_HZ) -> np.ndarray
     Use for PSD and modal analysis. Do NOT apply before rainflow counting —
     high-pass filtering removes mean load information needed for the damage
     calculation.
+
+    Note: this function is not called in run_pipeline by design. It is available
+    for ad-hoc analysis (e.g. isolating structural resonances before plotting PSD).
     """
     sos = butter(HP_ORDER, cutoff, btype="high", fs=FS, output="sos")
     return sosfiltfilt(sos, sig)
@@ -455,6 +461,14 @@ def compute_damage(
 
 
 
+# PSD band-power helper (module-level so it is not redefined on every window)
+
+def _band_power(freqs: np.ndarray, psd: np.ndarray, f_lo: float, f_hi: float) -> float:
+    """Integrate PSD between f_lo and f_hi using the trapezoidal rule."""
+    mask = (freqs >= f_lo) & (freqs < f_hi)
+    return float(_trapezoid(psd[mask], freqs[mask])) if np.any(mask) else 0.0
+
+
 # Feature extraction
 
 def extract_features(
@@ -492,18 +506,13 @@ def extract_features(
 
         # --- Frequency domain (Welch PSD) ---
         freqs, psd = welch(w, fs=FS, window="hann", nperseg=512, noverlap=256)
-        df_freq    = freqs[1] - freqs[0]
-
-        def band_power(f_lo, f_hi):
-            mask = (freqs >= f_lo) & (freqs < f_hi)
-            return float(np.trapezoid(psd[mask], freqs[mask])) if np.any(mask) else 0.0
 
         full_mask       = (freqs >= 0.5) & (freqs <= 80.0)
-        total_power     = band_power(0.5, 80.0)
+        total_power     = _band_power(freqs, psd, 0.5, 80.0)
         psd_peak_freq   = float(freqs[np.argmax(psd[full_mask])]) if np.any(full_mask) else 0.0
-        bp_low          = band_power(*BAND_LOW)
-        bp_mid          = band_power(*BAND_MID)
-        bp_high         = band_power(*BAND_HIGH)
+        bp_low          = _band_power(freqs, psd, *BAND_LOW)
+        bp_mid          = _band_power(freqs, psd, *BAND_MID)
+        bp_high         = _band_power(freqs, psd, *BAND_HIGH)
         spec_centroid   = (
             float(np.sum(freqs[full_mask] * psd[full_mask]) / np.sum(psd[full_mask]))
             if np.sum(psd[full_mask]) > 0 else 0.0
@@ -528,7 +537,6 @@ def extract_features(
 
     if len(cycles_df) > 0:
         amp_max     = cycles_df["amplitude"].max()
-        total_dmg   = damage_dict["damage_total"]
         # Damage fraction from large cycles (amplitude > 0.5 × max)
         large_mask  = cycles_df["amplitude"] > 0.5 * amp_max
         large_frac  = float(
@@ -680,12 +688,12 @@ def _save_plots(
     freqs, psd = welch(sig, fs=FS, nperseg=512)
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.semilogy(freqs, psd, color="steelblue", lw=1)
-    for lo, hi, label, col in [
+    for lo, hi, label, color in [
         (*BAND_LOW,  "Low (0.5–5 Hz)",  "green"),
         (*BAND_MID,  "Mid (5–25 Hz)",   "orange"),
         (*BAND_HIGH, "High (25–80 Hz)", "red"),
     ]:
-        ax.axvspan(lo, hi, alpha=0.08, color=col, label=label)
+        ax.axvspan(lo, hi, alpha=0.08, color=color, label=label)
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("PSD")
     ax.set_title(f"Power spectral density — {channel}")
@@ -751,8 +759,8 @@ def run_pipeline(csv_path: Path, outdir: Path) -> None:
 
     # process each channel
     # Primary: strain. Fallback: accel_z.
-    strain_suspect = repair_summary.get("gaps_flagged", 0) > 0
-
+    # TODO (B4): use gaps_flagged to flag strain data as suspect and skip damage
+    #            calculation when the record has large interpolation gaps.
     for channel, col in [("strain_ue", "strain_ue"), ("accel_z", "accel_z_ms2")]:
         log.info("-" * 40)
         log.info("Channel: %s", channel)

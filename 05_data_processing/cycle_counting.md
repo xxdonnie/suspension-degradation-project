@@ -4,7 +4,7 @@
 
 Fatigue damage accumulates cycle by cycle. Before a damage estimate can be made, the variable-amplitude load history recorded during driving must be decomposed into a set of discrete cycles, each characterised by a stress (or strain) amplitude and a mean value. This is done using the **rainflow counting algorithm**, which is the standard method in both automotive and structural engineering fatigue analysis.
 
-Cycle counting is implemented in `scripts/cycle_count.py`.
+Cycle counting is implemented in `scripts/process_pipeline.py` (function `count_cycles`).
 
 ## Why Rainflow Counting?
 
